@@ -1,0 +1,92 @@
+import results
+import requests
+import json
+import datetime
+import os
+from colors import bcolors
+
+timestamp_now = datetime.datetime.now().strftime('%Y-%m-%d')
+
+headers = {
+    'User-Agent': "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
+}
+
+
+def cymon(params=None, export_bool=False, download_bool=False, output_bool=False):
+    # Params must be list
+    if params is None:
+        params = []
+
+    # Dict with source and feed's id
+    feeds = {"malcode": "AVsGX4iNVjrVcoBZyoiH", "ponyc2": "AVy8uj-LEb4shFlhGDGG", "cct": "AVsIOKQlVjrVcoBZyojw",
+             "vxvault": "AVsGgHxAVjrVcoBZyoiX"}
+
+    # Dict with source and description
+    desc = {
+        "malcode": bcolors.OKBLUE + "Brought to you by Malc0de\n""https://twitter.com/malc0de\n""http://malc0de.com" + bcolors.ENDC,
+        "ponyc2": bcolors.OKBLUE + "Cybercrime Tracker for Pony malware" + bcolors.ENDC,
+        "cct": bcolors.OKBLUE + "cybercrime-tracker.net\n""Officially active from 2012, Cyber Crime Tracker monitors and tracks various malware families that are used to perpetrate cyber crimes, such as banking trojans and ransomware." + bcolors.ENDC,
+        "vxvault": bcolors.OKBLUE + "http://vxvault.net" + bcolors.ENDC}
+
+    info = {}  # output dictionary
+
+    # c=0, source = malcode
+    print bcolors.OKBLUE + "Cymon is the largest open tracker of malware, phishing, botnets, spam, and more. Brought to you by eSentire." + bcolors.ENDC
+    for counter, source in enumerate(params):
+
+        if source not in feeds.keys():
+            print "Unrecognized parameter: " + source
+            break
+        directory = source + timestamp_now  # making directory (source) with timestamp
+
+        # if there is "source" (passed args.cs) in feeds dictionary, first - source = malcode
+        if source in feeds:
+            req = requests.get("https://api.cymon.io/v2/ioc/search/feed/" + feeds[
+                source] + "?startDate=1990-01-01&endDate=" + timestamp_now + "&from=0&size=10",
+                               headers=headers)  # Make request to api
+
+            content = json.loads(req.text)  # load response 10 LAST RESULTS!!!!!
+
+            hits = content["hits"]
+
+            for i in hits:  # for i in all data from source
+
+                date = i['timestamp'][0:10]  # take date in format %YYYY-%MM-%%DD
+
+                url = i["ioc"]["url"]  # take url
+                info.update({url: date})  # add to dict
+                if 'md5' in i["ioc"].keys():  # if there is associated md5 hash, add it to dict as well
+                    md5 = i["ioc"]["md5"]
+                    info.update({url: [date, md5]})  # update dict in format {dict:[date, md5]}
+                else:  # if not md5 is present, continue
+                    continue
+
+        if export_bool:  # if -e or --export
+            try:
+                results.export(directory, info)  # call function
+                print "Exported to " + directory
+            except OSError as e:  # in case of error
+                print "Error " + e.strerror
+
+        elif download_bool and source == "vxvault" or source =="malcode":  # if -d or --download and only source with files is vxvault
+            try:
+                os.mkdir(directory)  # make directory with source + timestamp
+            except OSError as e:  # in case of error like file exists
+                print "Problem with file: " + directory + e.strerror
+                print "If exists continue"
+            finally:  # if exist we continue and do not make another one
+                for i in info.keys():  # for i in urls
+                    print("Downloading file " + i)
+                    results.download(i, directory)  # call function
+                    print("---------------------------")
+
+        elif output_bool:
+            print("++++++++++++++++++++++++++++++")
+            print desc[source]
+            print("++++++++++++++++++++++++++++++")
+            results.output(info)
+
+        else:
+            print "Please specify: --download or --export or --output"
+
+        info = {}
